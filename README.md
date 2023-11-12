@@ -1,1 +1,2 @@
 # Data-Science-Projects
+This repository contains a compilation of my data science projects, showcasing a diverse range of projects that leverage SQL and Python, along with essential libraries such as pandas, numpy, scipy and sklearn. These undertakings serve as a deliberate practice to hone my data science skills. As I embark on this journey, I aspire to build upon this foundation and ultimately contribute meaningfully to the field of data science.
