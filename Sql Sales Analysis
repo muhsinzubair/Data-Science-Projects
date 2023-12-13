@@ -1,1 +1,190 @@
+  --customers per state--
+SELECT
+  customer_state,
+  COUNT(DISTINCT(customer_id)) AS cst_cnt
+FROM
+  `target-sales-analysis.target_data.customers`
+GROUP BY
+  customer_state
+ORDER BY
+  cst_cnt DESC; 
+  
+  --orders per state--
+SELECT
+  l.geolocation_state,
+  COUNT(DISTINCT(o.order_id)) AS total_orders
+FROM
+  `target-sales-analysis.target_data.orders` AS o
+LEFT JOIN
+  `target-sales-analysis.target_data.customers` AS c
+ON
+  o.customer_id = c.customer_id
+LEFT JOIN
+  `target-sales-analysis.target_data.location` AS l
+ON
+  c.customer_zip_code_prefix = l.geolocation_zip_code_prefix
+GROUP BY
+  l.geolocation_state
+ORDER BY
+  total_orders DESC; 
+  
+  --orders per product category--
+SELECT
+  p.product_category,
+  COUNT(DISTINCT(o.order_id))
+FROM
+  `target-sales-analysis.target_data.products` AS p
+LEFT JOIN
+  `target-sales-analysis.target_data.order_items` AS oi
+ON
+  p.product_id = oi.product_id
+RIGHT JOIN
+  `target-sales-analysis.target_data.orders` AS o
+ON
+  oi.order_id = o.order_id
+GROUP BY
+  p.product_category; 
+  
+  --Time period for given data--
+SELECT
+  MIN(order_approved_at) AS start_time,
+  MAX(order_approved_at) AS end_time,
+  DATE_DIFF(MAX(CAST(order_approved_at AS DATE)),MIN(CAST(order_approved_at AS DATE)),month) AS total_months
+FROM
+  `target-sales-analysis.target_data.orders`;
+
+ --states of customers--
+ SELECT 
+  distinct(c.customer_state) as state
+FROM
+  `target-sales-analysis.target_data.customers` as c
+  join `target-sales-analysis.target_data.orders` as o
+  on c.customer_id = o.customer_id;
+
+ --cities of customers--
+ SELECT 
+  distinct(c.customer_city) as city
+FROM
+  `target-sales-analysis.target_data.customers` as c
+  join `target-sales-analysis.target_data.orders` as o
+  on c.customer_id = o.customer_id;
+
+  --sales trend--
+SELECT 
+  EXTRACT(MONTH FROM order_purchase_timestamp) AS month,
+  COUNT(DISTINCT(order_id)) AS total_orders
+FROM
+  `target-sales-analysis.target_data.orders`
+GROUP BY month
+ORDER BY month;
+
+  --sales trend in a day--
+
+select
+  case when hour between 0 and 4 then 'midnight'
+  when hour between 5 and 8 then 'dawn'
+  when hour between 9 and 12 then 'morning'
+  when hour between 13 and 16 then 'noon'
+  when hour between 17 and 20 then 'evening'
+  when hour between 21 and 23 then 'night'
+  end as time_period,
+  sum(order_cnt) as order_cnt
+from(select
+  extract(hour from order_purchase_timestamp) as hour,
+  count(distinct(order_id)) as order_cnt
+from
+  `target-sales-analysis.target_data.orders`
+group by hour)
+group by time_period
+order by order_cnt;
+
+  --month on month orders by state--
+select 
+  c.customer_state,
+  extract(month from o.order_purchase_timestamp) as month,
+  count(distinct(order_id)) as order_cnt
+from
+  `target-sales-analysis.target_data.orders` as o  
+  left join `target-sales-analysis.target_data.customers` as c  
+  on o.customer_id = c.customer_id
+group by c.customer_state, month
+order by month, order_cnt desc;
+
+ --%increase in cost of orders from 2017 to 2018--
+with cte as(
+  select
+    sum(p.payment_value) as cost,
+    extract(year from order_purchase_timestamp) as year,
+    extract(month from order_purchase_timestamp) as month
+  from `target-sales-analysis.target_data.orders` as o  
+  join `target-sales-analysis.target_data.payments` as p  
+  on o.order_id = p.order_id
+  group by year, month
+)
+
+select
+  c1.month,
+  round(sum(c1.cost),2) as cost_2017,
+  round(sum(c2.cost),2) as cost_2018,
+  round((sum(c2.cost)-sum(c1.cost))/sum(c1.cost)*100,2) as cost_increase
+from (select * from cte where year = 2017) as c1
+left join (select * from cte where year = 2018) as c2
+on c1.month = c2.month
+where (c1.month between 1 and 6) and (c2.month between 1 and 6)
+group by c1.month
+order by c1.month;
+
+  --mean,sum of price and freight value by customer state--
+select
+  c.customer_state,
+  round(sum(ot.price),2) as total_price,
+  round(avg(ot.price),2) as avg_price,
+  round(sum(ot.freight_value),2) as total_freight,
+  round(avg(ot.freight_value),2) as avg_freight
+from `target-sales-analysis.target_data.orders` as o  
+left join `target-sales-analysis.target_data.order_items` as ot  
+on o.order_id = ot.order_id
+join `target-sales-analysis.target_data.customers` as c
+on o.customer_id = c.customer_id
+group by c.customer_state
+order by total_price desc;
+
+  --days between purchase, delivery and estimated delivery--
+with date_diff_added as(
+  select *,
+  date_diff(cast(order_delivered_customer_date as date),cast(order_purchase_timestamp as date),day) as purchase_delivery_diff,
+  date_diff(cast(order_estimated_delivery_date as date),cast(order_delivered_customer_date as date),day) as delivery_estimated_diff
+from `target-sales-analysis.target_data.orders`
+)
+
+  --analysis on freight, difference between purchase, delivery and estimate--
+select
+  c.customer_state,
+  round(avg(ot.freight_value),2) as avg_freight,
+  round(avg(d.delivery_estimated_diff),2) as diff_estimated_delivery,
+  round(avg(d.purchase_delivery_diff),2) as diff_purchase_delivery
+from date_diff_added as d
+left join `target-sales-analysis.target_data.order_items` as ot
+on d.order_id = ot.order_id
+join `target-sales-analysis.target_data.customers` as c
+on d.customer_id = c.customer_id 
+group by c.customer_state
+order by avg_freight;
+
+  --month on month count of orders on different mode of payment--
+select p.payment_type, extract(month from order_purchase_timestamp) as month, count(distinct(o.order_id)) order_cnt
+from `target-sales-analysis.target_data.payments` as p
+join `target-sales-analysis.target_data.orders` as o 
+on p.order_id = o.order_id
+group by p.payment_type, month
+order by month, order_cnt desc;
+
+  --count of orders based on no of installments--
+select payment_installments,count(distinct(order_id)) as order_cnt
+from `target-sales-analysis.target_data.payments`
+group by payment_installments
+order by payment_installments
+
+
+
 
